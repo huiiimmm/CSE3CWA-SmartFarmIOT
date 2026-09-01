@@ -30,7 +30,7 @@ app.delete("/crop-cards/:id", (req, res) => {
   const {id} = req.params;
   db.run("DELETE FROM crop_card WHERE id = ?", [id], function (error){
   if (error){
-    return res.status(500).json({ error: "Failed to delete quote.: });
+    return res.status(500).json({ error: "Failed to delete quote:" });
   } if (this.changes === 0) {
     return res.status(404).json({ error: "crop card not found."});
   } res.json({ deleted: id});
@@ -88,7 +88,7 @@ app.put("/crop-cards/:id", (req, res) => {
 	  error: "Failed to update crop card",
 	});
     }
-    if (this.changes == ) {
+    if (this.changes === 0 ) {
 	return res.status(404).json({
 	  error: "crop card not found",
 	});
@@ -133,7 +133,7 @@ app.post("save-crop-card", (req, res) => {
     notes
   } = req.body;
 
-  const sqlQuery = '
+  const sqlQuery = `
     INSERT INTO crop_card
     (crop_name, location, target_min, target_max, normal_water, notes)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -147,7 +147,7 @@ app.post("save-crop-card", (req, res) => {
     notes
   ];
   db.run(sqlQuery, valuesInput, function (error) {
-    if (error {
+    if (error) {
       console.error("Database tracking failure:", error);
       return res.status(500).json({ error: "failed to save data" });
     }
@@ -171,7 +171,7 @@ app.post("save-crop-card", (req, res) => {
 
 app.get('/crop-readings', (req, res) => {
   try {
-    const filePath = path.join(_dirname, "sensor-readings.json");
+    const filePath = path.join(__dirname, "sensor-readings.json");
     fs.readFile(filePath, "utf8", (err, data) => {
 	if (err) {
 	  console.error("Error reading sensor data:", err);
@@ -186,14 +186,13 @@ app.get('/crop-readings', (req, res) => {
 	  console.error("invalid JSON:", parseError);
 	  res.status(500).json({
 	    error: "Invalid sensor readings JSON"
-	  }):
+	  });
 	}
     });
-  });
   } catch (error) {
     res.status(500).json ({ error: error.message });
   }
-}
+});
 
 const apiProxy = createProxyMiddleware({
   target: 'http://127.0.0.1:5000',

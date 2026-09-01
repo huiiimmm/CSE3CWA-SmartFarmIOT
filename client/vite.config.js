@@ -10,6 +10,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:3000', // Set to 3000 if using your proxy, or 5000 if hi>
         changeOrigin: true, 
+ 	rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },

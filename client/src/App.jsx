@@ -1,7 +1,89 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 
 function App() {
+
+  const [allCrops, setAllCrops] = useState([]);
+  const [cropName, setCropName] = useState([]);
+  const [cropLocation, setCropLocation] = useState([]);
+ 
+  const [cropReadings, setCropReadings] = useState([]);
+  const [latestCropReading, setLatestCropReading] = useState([]);
+
+  const [validationMessage, setValidationMessage] = useState("");
+  
+  const sortCropReadings = (readings) => {
+    return [...readings].sort((a, b) => {
+      const cropCompare = a.crop_name.localeCompare(b.crop_name);
+
+      if (cropCompare !== 0) {
+	return cropCompare;
+      }
+      return new Date(b.timestamp) - new Date(a.timestamp);
+    });
+  }
+
+  const getLatestCropReading = (readings) => {
+    const latest = {};
+    for (const reading of readings) {
+      const cropName = reading.crop_name;
+
+      if (
+	!latest[cropName] || 
+	new Date(reading.timestamp) > new Date(latest[cropName].timestamp)
+      ) {
+	latest[cropName] = reading;
+      }
+    }
+  return Object.values(latest);
+  }
+
+  useEffect(() => {
+    const fetchCropData = async () => {
+      try {
+        const response = await fetch("/api/crop-cards");
+
+        if (!response.ok) {
+          throw new Error("Failed to load crop data");
+        }
+
+        const cropData = await response.json();
+
+        setAllCrops(Array.isArray(cropData) ? cropData : []);
+	console.log(cropData);
+      } catch (error) {
+        console.error("Failed to load crop data:", error);
+        setAllCrops([]);
+        setValidationMessage(
+          "Unable to load crop options. Please refresh and try again"
+        );
+      }
+    };
+    const fetchCropReadings = async () => {
+      try {
+        const response = await(fetch("/api/crop-readings"));
+	if (!response.ok) {
+	  throw new Error("Failed to load crop readings");
+	}
+	const cropReadings = await response.json();
+	const sortedCropReadings =  sortCropReadings(Array.isArray(cropReadings) ? cropReadings : []);
+	setCropReadings(sortedCropReadings);
+	console.log("sorted crop readings:", sortedCropReadings);
+
+	const latestReadings = getLatestCropReading(cropReadings);
+	setLatestCropReading(latestReadings);
+
+      } catch (error) {
+	console.error("Failed to load crop readings:", error);
+	setCropReadings([]);
+	setValidation("Unable to load crop readings. PLease refresh and try again");
+      }
+    };
+
+    fetchCropReadings();
+    fetchCropData();
+  }, []);
+
   return (     
     <div>
       <style>{`
@@ -102,162 +184,44 @@ function App() {
  
           <p><em>Sensor feed unavailable — showing the last known readings.</em> <button>Try again</button></p>
  
-          <div className="grid">
- 
-            <div className="card">
-              <h3>Tomato</h3>
-              <p className="location">Greenhouse 2, Bay 3</p>
-              <table>
-                <tbody>
-                  <tr><td className="label">Target moisture</td><td>55–75%</td></tr>
-                  <tr><td className="label">Normal water</td><td>2.5 L/day</td></tr>
-                  <tr><td className="label">Soil moisture</td><td>64%</td></tr>
-                  <tr><td className="label">Temp</td><td>24.1°C</td></tr>
-                  <tr><td className="label">Humidity</td><td>58%</td></tr>
-                  <tr><td className="label">Light</td><td>610 lx</td></tr>
-                  <tr><td className="label">Condition</td><td>Optimal</td></tr>
-                  <tr><td className="label">Recommended water</td><td>2.5 L/day</td></tr>
-                  <tr><td className="label">Action</td><td>Maintain current schedule</td></tr>
-                </tbody>
-              </table>
-              <div className="actions">
-                <button>View sensor history</button>
-                <span><button>Edit</button> <button>Delete</button></span>
-              </div>
+          <div className="card">
+            <div>
+              {allCrops.map((crop) => (
+		<div className="card" key={crop.id}>
+		  <h3>{crop.crop_name}</h3>
+		  <p className="location">{crop.location}</p>
+		  <table>
+		    <tbody>
+		      <tr>
+			<td className="label">Target moisturses</td>
+			<td>{crop.target_min}-{crop.target_max}%</td>
+		      </tr>
+		      <tr>
+			<td className="label">Normal Water</td>
+			<td>{crop.normal_water} ml/day</td>
+		      </tr>
+		      <tr>
+			<td className="label">Notes</td>
+			<td>{crop.notes || "no notes"}</td>
+		      </tr>
+		    </tbody>
+		  </table>
+		  <div className="actions">
+		    <button>View sensor history</button>
+		    <span>
+		      <button>Edit</button>
+		      <button>Delete</button>
+		    </span>
+		  </div>
+		</div>
+	      ))}    
             </div>
- 
-            <div className="card">
-              <h3>Lettuce</h3>
-              <p className="location">Field 4, Row 12</p>
-              <table>
-                <tbody>
-                  <tr><td className="label">Target moisture</td><td>60–80%</td></tr>
-                  <tr><td className="label">Normal water</td><td>1.2 L/day</td></tr>
-                  <tr><td className="label">Soil moisture</td><td>48%</td></tr>
-                  <tr><td className="label">Temp</td><td>31.4°C</td></tr>
-                  <tr><td className="label">Humidity</td><td>29%</td></tr>
-                  <tr><td className="label">Light</td><td>780 lx</td></tr>
-                  <tr><td className="label">Condition</td><td>Too dry</td></tr>
-                  <tr><td className="label">Recommended water</td><td>1.5 L/day</td></tr>
-                  <tr><td className="label">Action</td><td>Water today, above the normal amount</td></tr>
-                </tbody>
-              </table>
-              <ul>
-                <li>Soil moisture is below the target range</li>
-                <li>Low humidity may speed up water loss</li>
-              </ul>
-              <div className="actions">
-                <button>View sensor history</button>
-                <span><button>Edit</button> <button>Delete</button></span>
-              </div>
-            </div>
- 
-            <div className="card">
-              <h3>Capsicum</h3>
-              <p className="location">Greenhouse 1, Bay 1</p>
-              <table>
-                <tbody>
-                  <tr><td className="label">Target moisture</td><td>50–70%</td></tr>
-                  <tr><td className="label">Normal water</td><td>2.0 L/day</td></tr>
-                  <tr><td className="label">Soil moisture</td><td>83%</td></tr>
-                  <tr><td className="label">Temp</td><td>19.8°C</td></tr>
-                  <tr><td className="label">Humidity</td><td>71%</td></tr>
-                  <tr><td className="label">Light</td><td>340 lx</td></tr>
-                  <tr><td className="label">Condition</td><td>Too wet</td></tr>
-                  <tr><td className="label">Recommended water</td><td>1.4 L/day</td></tr>
-                  <tr><td className="label">Action</td><td>Hold off watering, check drainage</td></tr>
-                </tbody>
- 	             </table>
-              <ul>
-                <li>Soil moisture is above the target range</li>
-              </ul>
-              <div className="actions">
-                <button>View sensor history</button>
-                <span><button>Edit</button> <button>Delete</button></span>
-              </div>
-            </div>
-          </div>
+           </div>
         </section>
  
         <section>
           <h2>Sensor history (five readings, newest first)</h2>
-          <p style={{ color: "#666", fontSize: "13px" }}>Lettuce — Field 4, Row 12</p>
- 
-          <div className="history-row">
-            <div className="top"><span>Today, 14:20</span><span>Too dry</span></div>
-            <table>
-              <tbody>
-                <tr><td className="label">Soil moisture</td><td>48%</td></tr>
-                <tr><td className="label">Temp</td><td>31.4°C</td></tr>
-                <tr><td className="label">Humidity</td><td>29%</td></tr>
-                <tr><td className="label">Light</td><td>780 lx</td></tr>
-              </tbody>
-            </table>
-            <p>Water today, above the normal amount — 1.5 L/day recommended</p>
-            <ul>
-              <li>Soil moisture is below the target range</li>
-              <li>Low humidity may speed up water loss</li>
-            </ul>
-          </div>
- 
-          <div className="history-row">
-            <div className="top"><span>Today, 11:20</span><span>Optimal</span></div>
-            <table>
-              <tbody>
-                <tr><td className="label">Soil moisture</td><td>66%</td></tr>
-                <tr><td className="label">Temp</td><td>26.0°C</td></tr>
-                <tr><td className="label">Humidity</td><td>44%</td></tr>
-                <tr><td className="label">Light</td><td>690 lx</td></tr>
-              </tbody>
-            </table>
-            <p>Maintain current schedule — 1.2 L/day recommended</p>
-          </div>
- 
-          <div className="history-row">
-            <div className="top"><span>Today, 08:20</span><span>Optimal</span></div>
-            <table>
-              <tbody>
-                <tr><td className="label">Soil moisture</td><td>70%</td></tr>
-                <tr><td className="label">Temp</td><td>21.3°C</td></tr>
-                <tr><td className="label">Humidity</td><td>51%</td></tr>
-                <tr><td className="label">Light</td><td>210 lx</td></tr>
-              </tbody>
-            </table>
-            <p>Maintain current schedule — 1.2 L/day recommended</p>
-          </div>
- 
-          <div className="history-row">
-            <div className="top"><span>Yesterday, 23:20</span><span>Too wet</span></div>
-            <table>
-              <tbody>
-                <tr><td className="label">Soil moisture</td><td>84%</td></tr>
-                <tr><td className="label">Temp</td><td>17.6°C</td></tr>
-                <tr><td className="label">Humidity</td><td>62%</td></tr>
-                <tr><td className="label">Light</td><td>95 lx</td></tr>
-              </tbody>
-            </table>
-            <p>Hold off watering, check drainage — 0.8 L/day recommended</p>
-            <ul>
-              <li>Soil moisture is above the target range</li>
-              <li>Light levels are low for healthy growth</li>
-            </ul>
-          </div>
- 
-          <div className="history-row">
-            <div className="top"><span>Yesterday, 20:20</span><span>Optimal</span></div>
-            <table>
-              <tbody>
-                <tr><td className="label">Soil moisture</td><td>67%</td></tr>
-                <tr><td className="label">Temp</td><td>22.1°C</td></tr>
-                <tr><td className="label">Humidity</td><td>55%</td></tr>
-                <tr><td className="label">Light</td><td>140 lx</td></tr>
-              </tbody>
-            </table>
-            <p>Maintain current schedule — 1.2 L/day recommended</p>
-          </div>
- 
-          <button className="primary">Close</button>
-        </section> 
+         </section> 
       </div>
     </div>
   )
