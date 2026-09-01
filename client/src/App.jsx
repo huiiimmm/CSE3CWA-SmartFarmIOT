@@ -3,12 +3,9 @@ import './App.css'
 
 function App() {
 
-  const [allCrops, setAllCrops] = useState([]);
-  const [cropName, setCropName] = useState([]);
-  const [cropLocation, setCropLocation] = useState([]);
- 
+  const [cropCards, setCropCards] = useState([]);
   const [cropReadings, setCropReadings] = useState([]);
-  const [latestCropReading, setLatestCropReading] = useState([]);
+  const [latestCropReadings, setLatestCropReadings] = useState([]);
 
   const [validationMessage, setValidationMessage] = useState("");
   
@@ -23,7 +20,7 @@ function App() {
     });
   }
 
-  const getLatestCropReading = (readings) => {
+  const getLatestCropReadings = (readings) => {
     const latest = {};
     for (const reading of readings) {
       const cropName = reading.crop_name;
@@ -38,6 +35,78 @@ function App() {
   return Object.values(latest);
   }
 
+const getCropCondition = (reading, target_min, target_max, normal_water) => {
+  const { sensor_status, soil_moisture, temperature, rainfall } = reading;
+  
+    if (sensor_status === "Offline" || sensor_status === "Faulty") {
+      return {
+        condition: "Sensor Problem",
+        recommendedWater: "N/A",
+        alert: "Check sensor",
+        action: "Check sensor",
+      };
+    }
+
+    if (
+      sensor_status === "Online" &&
+      (
+        soil_moisture < 0 ||
+        soil_moisture > 100 ||
+        temperature < 0 ||
+        temperature > 50 ||
+        rainfall < 0 ||
+        rainfall > 50
+      )
+    ) {
+      const invalidFields = [];
+
+      if (soil_moisture < 0 || soil_moisture > 100) {
+        invalidFields.push("soil moisture");
+      }
+
+      if (temperature < 0 || temperature > 50) {
+        invalidFields.push("temperature");
+      }
+
+      if (rainfall < 0 || rainfall > 50) {
+        invalidFields.push("rainfall");
+      }
+
+      return {
+        condition: "Invalid Data",
+        recommendedWater: "N/A",
+        alert: `Invalid ${invalidFields.join(", ")}`,
+        action: "Check reading",
+      };
+    }
+    if (soil_moisture < target_min) {
+      return {
+        condition: "Dry",
+        recommendedWater: normal_water,
+        alert: null,
+        action: "Water crop",
+      };
+    }
+    if (soil_moisture >= target_min && soil_moisture <= target_max) {
+      return {
+        condition: "Healthy",
+        recommendedWater: 0,
+        alert: null,
+        action: "Monitor",
+      };
+    }
+    if (soil_moisture > target_max) {
+      return {
+        condition: "Too Wet",
+        recommendedWater: 0,
+        alert: null,
+        action: "Stop watering",
+      };
+    }
+
+    return null;
+  };
+
   useEffect(() => {
     const fetchCropData = async () => {
       try {
@@ -49,16 +118,17 @@ function App() {
 
         const cropData = await response.json();
 
-        setAllCrops(Array.isArray(cropData) ? cropData : []);
+        setCropCards(Array.isArray(cropData) ? cropData : []);
 	console.log(cropData);
       } catch (error) {
         console.error("Failed to load crop data:", error);
-        setAllCrops([]);
+        setCropCards([]);
         setValidationMessage(
           "Unable to load crop options. Please refresh and try again"
         );
       }
     };
+
     const fetchCropReadings = async () => {
       try {
         const response = await(fetch("/api/crop-readings"));
@@ -70,12 +140,14 @@ function App() {
 	setCropReadings(sortedCropReadings);
 	console.log("sorted crop readings:", sortedCropReadings);
 
-	const latestReadings = getLatestCropReading(cropReadings);
-	setLatestCropReading(latestReadings);
+	const latestReadings = getLatestCropReadings(cropReadings);
+	setLatestCropReadings(latestReadings);
+	console.log("Latest crop readings:", latestReadings);
 
       } catch (error) {
 	console.error("Failed to load crop readings:", error);
 	setCropReadings([]);
+	setLatestCropReadings([]);
 	setValidation("Unable to load crop readings. PLease refresh and try again");
       }
     };
@@ -84,7 +156,7 @@ function App() {
     fetchCropData();
   }, []);
 
-  return (     
+  return ( 
     <div>
       <style>{`
         .fl-simple {
@@ -173,7 +245,7 @@ function App() {
             </div>
             <div className="stats">
               <div className="stat"><span className="label">Farm status</span><span>Needs attention</span></div>
-              <div className="stat"><span className="label">Crop cards</span><span>4</span></div>
+              <div className="stat"><span className="label">Crop cards</span><span>{cropCards.length}</span></div>
               <div className="stat"><span className="label">Last refresh</span><span>12m ago</span></div>
             </div>
             <div>
@@ -186,7 +258,19 @@ function App() {
  
           <div className="card">
             <div>
-              {allCrops.map((crop) => (
+              {cropCards.map((crop) => {
+		const latestReadings = latestCropReadings.find(
+		  (reading) => reading.crop_name === crop.crop_name
+		);
+
+		const status = latestReadings ? 
+			       getCropCondition(
+			         latestReadings, 
+			         crop.target_min,
+				 crop.target_max,
+				 crop.normal_water
+			       ) : null;
+	        return (
 		<div className="card" key={crop.id}>
 		  <h3>{crop.crop_name}</h3>
 		  <p className="location">{crop.location}</p>
@@ -199,6 +283,24 @@ function App() {
 		      <tr>
 			<td className="label">Normal Water</td>
 			<td>{crop.normal_water} ml/day</td>
+		      </tr>
+		      <tr>
+			<td className="label">Latest Moisutre</td>
+			<td>
+			  {latestReadings ? `${latestReadings.soil_moisture}%` : "No reading"}
+			</td>
+		      </tr>
+		      <tr>
+			<td className="label">Condition</td>
+			<td>{status ? status.condition : "No reading"}</td>
+		      </tr>
+		      <tr>
+			<td className="label">Recommended Water</td>
+			<td>{status ? status.recommendedWater === "N/A" ? "N/A" : `${status.recommendedWater} ml/day` : "N/A"}</td>
+		      </tr>
+		      <tr>
+			<td className="label">Action</td>
+			<td>{status ? status.action : "No Reading"}</td>
 		      </tr>
 		      <tr>
 			<td className="label">Notes</td>
@@ -214,9 +316,10 @@ function App() {
 		    </span>
 		  </div>
 		</div>
-	      ))}    
+		);
+	      })}  
             </div>
-           </div>
+           </div> 
         </section>
  
         <section>
@@ -227,4 +330,4 @@ function App() {
   )
 }
 
-export default App
+export default App;
