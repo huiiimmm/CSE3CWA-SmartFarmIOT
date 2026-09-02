@@ -26,15 +26,31 @@ app.get('/crop-cards', (req, res) => {
   }
 });
 
-app.delete("/crop-cards/:id", (req, res) => {
+app.delete("/crop-cards/:id", async (req, res) => {
   const {id} = req.params;
-  db.run("DELETE FROM crop_card WHERE id = ?", [id], function (error){
-  if (error){
-    return res.status(500).json({ error: "Failed to delete quote:" });
-  } if (this.changes === 0) {
-    return res.status(404).json({ error: "crop card not found."});
-  } res.json({ deleted: id});
-  });
+
+  try {
+    const stmt = db.prepare(
+      "DELETE FROM crop_card WHERE id = ?"
+    );
+    const result = stmt.run(id);
+
+    if (result.changes === 0) {
+      return res.status(404).json({
+        error: "Crop card not found.",
+      });
+    }
+
+    res.json({
+      deleted: id,
+    });
+
+  } catch (error) {
+    console.error("Failed to delete crop card:", error);
+    res.status(500).json({
+      error: "Failed to ddelete crop card.",
+    });
+  }
 });
 
 app.put("/crop-cards/:id", (req, res) => {
@@ -123,50 +139,48 @@ app.put("/crop-cards/:id", (req, res) => {
   });
 });
 
-app.post("save-crop-card", (req, res) => {
-  const {
-    crop_name,
-    location,
-    target_min,
-    target_max,
-    normal_water,
-    notes
-  } = req.body;
+app.post("/add-crop-card", (req, res) => {
+  try {
+    const {
+      crop_name,
+      location,
+      target_min,
+      target_max,
+      normal_water,
+      notes
+    } = req.body;
 
-  const sqlQuery = `
-    INSERT INTO crop_card
-    (crop_name, location, target_min, target_max, normal_water, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `;
-  const valuesInput = [
-    crop_name,
-    location,
-    target_min,
-    target_max,
-    normal_water,
-    notes
-  ];
-  db.run(sqlQuery, valuesInput, function (error) {
-    if (error) {
-      console.error("Database tracking failure:", error);
-      return res.status(500).json({ error: "failed to save data" });
-    }
+    const sqlQuery = `
+      INSERT INTO crop_card
+      (crop_name, location, target_min, target_max, normal_water, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    const stmt = db.prepare(sqlQuery);
 
-  const insertedID = this.lastID;
-  db.get(
-    `SELECT * FROM crop_card WHERE id = ?`,
-    [insertedID],
-    (selectError, row) => {
-      if (selectError) {
-	console.error("Failed to fetch saved record:", selectError);
-	return res.status(500).json({ error: "failed to load saved record" });
-      }
-      res.status(200).json({
-	message: "crop card saved successfully!",
-	record: row,
-      });
+    const result = stmt.run(
+      crop_name,
+      location,
+      target_min,
+      target_max,
+      normal_water,
+      notes
+    );
+
+    const insertedID = result.lastInsertRowid;
+
+    const savedCrop = db.prepare("SELECT * FROM crop_card WHERE id = ?").get(insertedID);
+
+    res.status(200).json({
+      message: "Crop card saved successfully!", 
+      record: savedCrop,
     });
-  });
+  } catch (error) {
+    console.error("Database tracking failure:", error);
+
+    res.status(500).json({
+      error: "Failed to save data",
+    });
+  }
 });
 
 app.get('/crop-readings', (req, res) => {

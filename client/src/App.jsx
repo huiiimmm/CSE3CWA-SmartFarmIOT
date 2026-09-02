@@ -7,6 +7,17 @@ function App() {
   const [cropReadings, setCropReadings] = useState([]);
   const [latestCropReadings, setLatestCropReadings] = useState([]);
 
+  const [showCropAdditionForm, setShowCropAdditionForm] = useState(false);
+
+  const [cropAdditionForm, setCropAdditionForm] = useState({
+    crop_name: "",
+    location: "",
+    target_min: "",
+    target_max: "",
+    normal_water: "",
+    notes: "",
+  });
+
   const [validationMessage, setValidationMessage] = useState("");
   
   const sortCropReadings = (readings) => {
@@ -35,8 +46,8 @@ function App() {
   return Object.values(latest);
   }
 
-const getCropCondition = (reading, target_min, target_max, normal_water) => {
-  const { sensor_status, soil_moisture, temperature, rainfall } = reading;
+  const getCropCondition = (reading, target_min, target_max, normal_water) => {
+    const { sensor_status, soil_moisture, temperature, rainfall } = reading;
   
     if (sensor_status === "Offline" || sensor_status === "Faulty") {
       return {
@@ -107,7 +118,81 @@ const getCropCondition = (reading, target_min, target_max, normal_water) => {
     return null;
   };
 
-  useEffect(() => {
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setCropAdditionForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+  
+  const addCropCard = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch("/api/add-crop-card", {
+	method: "POST",
+	headers: {"Content-Type": "application/json",},
+	body: JSON.stringify({
+	  crop_name: cropAdditionForm.crop_name,
+	  location: cropAdditionForm.location,
+	  target_min: Number(cropAdditionForm.target_min),
+	  target_max: Number(cropAdditionForm.target_max),
+	  normal_water: cropAdditionForm.normal_water,
+	  notes: cropAdditionForm.notes,
+	}),
+      });
+    const data = await response.json();
+    if(!response.ok) {
+      throw new Error(data.error || "Failed to save crop card");
+    }
+
+    console.log("Saved crop card:", data.record);
+
+    alert("Crop card saved successfully!");
+
+    setCropAdditionForm({
+      crop_name: "",
+      location: "",
+      target_min: "",
+      target_max: "",
+      normal_water: "",
+      notes: "",
+    });
+    loadCrops();
+    } catch (error) {
+      console.error("Error saving crop card:", error);
+      alert("Failed to save crop card");
+    }
+  };
+
+  const findMissingCrops = (readings, cropCards) => {
+    const existingCropNames = new Set(cropCards.map((crop) => crop.crop_name?.trim().toLowerCase()));
+
+    const missingCropNames = new Set();
+
+    readings.forEach((reading) => { 
+      const cropName = reading.crop_name?.trim();
+      if (
+	cropName &&
+	!existingCropNames.has(cropName.toLowerCase())
+      ) {
+	missingCropNames.add(cropName);
+      }
+    });
+    return [...missingCropNames];
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      const res = await fetch(`/api/crop-cards/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP error, status: ${res.status}`);
+      await loadCrops();
+    } catch (error) {
+      console.error("Failed to delete crop card:", error);
+    }
+  }
+
+  const loadCrops = async () => {
     const fetchCropData = async () => {
       try {
         const response = await fetch("/api/crop-cards");
@@ -152,9 +237,17 @@ const getCropCondition = (reading, target_min, target_max, normal_water) => {
       }
     };
 
-    fetchCropReadings();
-    fetchCropData();
+    await Promise.all([
+      fetchCropReadings(),
+      fetchCropData(),
+    ]);
+  };
+
+  useEffect(() => {
+    loadCrops();
   }, []);
+
+  const missingCrops = findMissingCrops(latestCropReadings, cropCards);
 
   return ( 
     <div>
@@ -250,7 +343,7 @@ const getCropCondition = (reading, target_min, target_max, normal_water) => {
             </div>
             <div>
               <button>Refresh sensor data</button>
-              <button className="primary">Add crop card</button>
+              <button className="primary" onClick={() => setShowCropAdditionForm(true)}>Add crop card</button>
             </div>
           </div>
  
@@ -312,7 +405,7 @@ const getCropCondition = (reading, target_min, target_max, normal_water) => {
 		    <button>View sensor history</button>
 		    <span>
 		      <button>Edit</button>
-		      <button>Delete</button>
+		      <button onClick={() => handleDelete(crop.id)}>Delete</button>
 		    </span>
 		  </div>
 		</div>
@@ -325,9 +418,111 @@ const getCropCondition = (reading, target_min, target_max, normal_water) => {
         <section>
           <h2>Sensor history (five readings, newest first)</h2>
          </section> 
+{showCropAdditionForm && (
+<div className="popup-overlay">
+    <div className="popup">
+      <button
+        className="popup-close"
+        onClick={() => setShowCropAdditionForm(false)}
+      >
+        ×
+      </button>
+
+      <h2>Add Crop Card</h2>
+
+      <form onSubmit={addCropCard}>
+        <label>
+          Crop name
+          <select
+            name="crop_name"
+            value={cropAdditionForm.crop_name}
+            onChange={handleChange}
+            required
+          >
+	<option value="">Select a crop</option>
+	{missingCrops.map((cropName) => (
+	  <option key={cropName} value={cropName}>
+	    {cropName}
+	  </option>
+	))}
+        </select>
+        </label>
+
+        <label>
+          Location
+          <input
+            type="text"
+	    name="location"
+            value={cropAdditionForm.location}
+            onChange={handleChange}
+	    placeholder="Enter crop location"
+            required
+          />
+        </label>
+
+        <label>
+          Minimum moisture
+          <input
+            type="number"
+	    name="target_min"
+            value={cropAdditionForm.target_min}
+            onChange={handleChange}
+            required
+          />
+        </label>
+
+        <label>
+          Maximum moisture
+          <input
+            type="number"
+	    name="target_max"
+            value={cropAdditionForm.target_max}
+            onChange={handleChange}
+            required
+          />
+        </label>
+
+        <label>
+          Normal water (ml/day)
+          <input
+            type="number"
+	    name="normal_water"
+            value={cropAdditionForm.normal_water}
+            onChange={handleChange}
+            required
+          />
+        </label>
+
+        <label>
+          Notes
+          <textarea
+            value={cropAdditionForm.notes}
+	    name="notes"
+            onChange={handleChange}
+          />
+        </label>
+
+        <div className="popup-actions">
+          <button
+            type="button"
+            onClick={() => setShowCropAdditionForm(false)}
+          >
+            Cancel
+          </button>
+
+          <button type="submit" className="primary" onClick={addCropCard}>
+            Save Crop
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
+
+
       </div>
     </div>
-  )
+  );
 }
 
 export default App;
