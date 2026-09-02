@@ -54,89 +54,87 @@ app.delete("/crop-cards/:id", async (req, res) => {
 });
 
 app.put("/crop-cards/:id", (req, res) => {
-  const {id} = req.params;
+  const { id } = req.params;
 
   const {
     crop_name,
     location,
     target_min,
-    target_max, 
+    target_max,
     normal_water,
-    notes
+    notes,
   } = req.body;
 
+  // Validate required fields
   if (
     !crop_name ||
     !location ||
-    !target_min ||
-    !target_max ||
-    !normal_water 
-  )  {
+    target_min === undefined ||
+    target_max === undefined ||
+    normal_water === undefined
+  ) {
     return res.status(400).json({
-      error: "missing required data fields",
+      error: "Missing required data fields",
     });
   }
-  db.run(
-    `
-    UPDATE crop_card
-    SET
-	crop_name = ?,
-	location = ?,
-	target_min = ?,
-	target_max = ?,
-	normal_water = ?,
-	notes = ?
-    WHERE id = ?
-    `,
-    [
-	crop_name.trim(),
-	location.trim(),
-	target_min,
-	target_max,
-	normal_water,
-	notes ? notes.trim() : null,
-	id,
-    ],
-    function (error) {
-      if (error) {
-	console.error("Failed to update crop card:", error);
-	return res.status(500).json({
-	  error: "Failed to update crop card",
-	});
-    }
-    if (this.changes === 0 ) {
-	return res.status(404).json({
-	  error: "crop card not found",
-	});
-    }
-    db.get(
-      `
-      SELECT
-	id,
-	crop_name,
-	location,
-	target_min,
-	target_max,
-	normal_water,
-	notes,
-	created_at
-      FROM crop_card
+
+  try {
+    const updateQuery = `
+      UPDATE crop_card
+      SET
+        crop_name = ?,
+        location = ?,
+        target_min = ?,
+        target_max = ?,
+        normal_water = ?,
+        notes = ?
       WHERE id = ?
-      `,
-      [id],
-      (selectError, updatedCropCard) => {
-	if (selectError) {
-	  console.error(
-	    "Crop card updated but could not be retrieved",
-	    selectError
-	  );
-	return res.status(500).json({
-	  error: "Crop card updated but could not be retrieved",
-	});
+    `;
+
+    const result = db.prepare(updateQuery).run(
+      crop_name.trim(),
+      location.trim(),
+      Number(target_min),
+      Number(target_max),
+      Number(normal_water),
+      notes ? notes.trim() : null,
+      id
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({
+        error: "Crop card not found",
+      });
     }
-    res.json(updatedCropCard);
+
+    const updatedCropCard = db
+      .prepare(`
+        SELECT
+          id,
+          crop_name,
+          location,
+          target_min,
+          target_max,
+          normal_water,
+          notes,
+          created_at
+        FROM crop_card
+        WHERE id = ?
+      `)
+      .get(id);
+
+    return res.status(200).json({
+      message: "Crop card updated successfully",
+      record: updatedCropCard,
     });
-  });
+
+  } catch (error) {
+    console.error("Failed to update crop card:", error);
+
+    return res.status(500).json({
+      error: "Failed to update crop card",
+    });
+  }
 });
 
 app.post("/add-crop-card", (req, res) => {

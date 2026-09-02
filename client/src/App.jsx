@@ -6,8 +6,19 @@ function App() {
   const [cropCards, setCropCards] = useState([]);
   const [cropReadings, setCropReadings] = useState([]);
   const [latestCropReadings, setLatestCropReadings] = useState([]);
+  const [editingCropCard, setEditingCropCard] = useState(null);
+  const [farmStatus, setFarmStatus] = useState({  
+    status: "No data",
+    healthy: 0,
+    attention: 0,
+    critical: 0,
+    total: 0,
+  });
 
   const [showCropAdditionForm, setShowCropAdditionForm] = useState(false);
+  const [selectedCrop, setSelectedCrop] = useState(null);
+  const [selectedCropReadings, setSelectedCropReadings] = useState([]);
+  const [showCropHistory, setShowCropHistory] = useState(false);
 
   const [cropAdditionForm, setCropAdditionForm] = useState({
     crop_name: "",
@@ -30,6 +41,31 @@ function App() {
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
   }
+
+  const getRecentReadingsPerCrop = (readings, cropCards) => {
+    if (!Array.isArray(readings) || !Array.isArray(cropCards)) {
+      return{};
+    }
+
+    const sortedReadings = sortCropReadings(readings);
+    const grouped = {};
+
+    for (const crop of cropCards) {
+      const cropName = crop.crop_name;
+
+      const cropReadings = sortedReadings.filter(
+	(reading) => String(reading.crop_name).trim().toLowerCase() ===
+		     String(cropName).trim().toLowerCase()
+	).slice(0, 5);
+      grouped[cropName] = cropReadings;
+    }
+  return grouped;
+  };
+
+  const getRecentReadingsForCrop = (cropName) => {
+    return cropReadings.filter((reading) => reading.crop_name === cropName).sort(
+      (a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 5);
+  };
 
   const getLatestCropReadings = (readings) => {
     const latest = {};
@@ -126,11 +162,16 @@ function App() {
     }));
   };
   
-  const addCropCard = async (e) => {
+  const handleSubmitCropCard = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch("/api/add-crop-card", {
-	method: "POST",
+      const isEditing = editingCropCard !== null;
+
+      const url = isEditing ? `/api/crop-cards/${editingCropCard.id}` : "/api/add-crop-card";
+      const method = isEditing ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+	method,
 	headers: {"Content-Type": "application/json",},
 	body: JSON.stringify({
 	  crop_name: cropAdditionForm.crop_name,
@@ -146,9 +187,9 @@ function App() {
       throw new Error(data.error || "Failed to save crop card");
     }
 
-    console.log("Saved crop card:", data.record);
+    console.log(isEditing ? "Updated crop card:" : "Created crop card:", data.record);
 
-    alert("Crop card saved successfully!");
+    alert(isEditing ? "Crop card updated successfully!" : "crop card added successfully!");
 
     setCropAdditionForm({
       crop_name: "",
@@ -158,7 +199,10 @@ function App() {
       normal_water: "",
       notes: "",
     });
-    loadCrops();
+    setEditingCropCard(null);
+    setShowCropAdditionForm(false);
+
+    await loadCrops();
     } catch (error) {
       console.error("Error saving crop card:", error);
       alert("Failed to save crop card");
@@ -192,6 +236,18 @@ function App() {
     }
   }
 
+  const handleViewHistory = (crop) => {
+    console.log("selected crop:", crop);
+    console.log("All readings:", cropReadings);
+
+    const readings = getRecentReadingsForCrop(crop.crop_name);
+    console.log("Recent readings:", readings);
+
+    setSelectedCrop(crop);
+    setSelectedCropReadings(readings);
+    setShowCropHistory(true);
+  };
+
   const loadCrops = async () => {
     const fetchCropData = async () => {
       try {
@@ -203,14 +259,19 @@ function App() {
 
         const cropData = await response.json();
 
-        setCropCards(Array.isArray(cropData) ? cropData : []);
-	console.log(cropData);
+        const crops = Array.isArray(cropData) ? cropData : [];
+
+        setCropCards(crops);
+	console.log("Crop cards:", crops);
+	return crops;
+
       } catch (error) {
         console.error("Failed to load crop data:", error);
         setCropCards([]);
         setValidationMessage(
           "Unable to load crop options. Please refresh and try again"
         );
+	return[];
       }
     };
 
@@ -221,13 +282,17 @@ function App() {
 	  throw new Error("Failed to load crop readings");
 	}
 	const cropReadings = await response.json();
-	const sortedCropReadings =  sortCropReadings(Array.isArray(cropReadings) ? cropReadings : []);
+
+	const readings = Array.isArray(cropReadings) ? cropReadings : [];
+
+	const sortedCropReadings = sortCropReadings(readings);
 	setCropReadings(sortedCropReadings);
 	console.log("sorted crop readings:", sortedCropReadings);
 
 	const latestReadings = getLatestCropReadings(cropReadings);
 	setLatestCropReadings(latestReadings);
 	console.log("Latest crop readings:", latestReadings);
+	return {readings, latestReadings,};
 
       } catch (error) {
 	console.error("Failed to load crop readings:", error);
@@ -237,10 +302,109 @@ function App() {
       }
     };
 
-    await Promise.all([
+    const [{readings, latestReadings}, crops] = await Promise.all([
       fetchCropReadings(),
       fetchCropData(),
     ]);
+    const recentReadings = getRecentReadingsPerCrop(readings);
+    const farmStatus = getFarmStatus(crops, latestReadings);
+    setFarmStatus(farmStatus);
+  };
+
+  const getFarmStatus = (cropCards, latestCropReadings) => {
+    if (
+      !Array.isArray(cropCards) ||
+      !Array.isArray(latestCropReadings) ||
+      cropCards.length ===0
+    ) {
+     return {
+	status: "No data",
+	message: "No crop data available",
+	healthy: 0,
+	attention: 0,
+	critical: 0,
+	total: 0,
+      };
+    }
+
+    let healthy = 0;
+    let attention = 0;
+    let critical = 0;
+
+    cropCards.forEach((crop) => {
+      const reading = latestCropReadings.find(
+	(r) => r.crop_name === crop.crop_name
+      );
+
+      if (!reading) {
+	attention++;
+	return;
+      }
+
+      const moisture = Number(reading.soil_moisture);
+      const min = Number(crop.target_min);
+      const max = Number(crop.target_max);
+
+      if (
+	!Number.isFinite(moisture) ||
+	!Number.isFinite(min) ||
+	!Number.isFinite(max)
+      ) {
+	attention++;
+	return;
+      }
+
+      if (moisture >= min && moisture <= max) {
+	healthy++;
+	return;
+      }
+
+      const deviation = moisture < min ? min - moisture : moisture - max;
+
+      if (deviation >= 20) {
+	critical++;
+      } else {
+	attention++;
+      }
+    });
+
+    const total = cropCards.length;
+
+    let status;
+    let message;
+
+    if (critical > 0) {
+      status = "critical";
+      message = `${critical} crop${critical > 1 ? "s" : ""} require immediate attention`;
+    } else if (attention > 0) {
+      status = "Needs attention";
+      message = `${attention} crop${attention > 1 ? "s" : ""} need attention`;
+    } else {
+      status = "Healthy";
+      message = "All crops are within their target moisture range";
+    }
+    return {
+      status,
+      message,
+      healthy,
+      attention,
+      critical,
+      total,
+    };
+  };
+
+  const handleEdit = (crop) => {
+    setEditingCropCard(crop);
+
+    setCropAdditionForm({
+      crop_name: crop.crop_name,
+      location: crop.location,
+      target_min: crop.target_min,
+      target_max: crop.target_max,
+      normal_water: crop.normal_water,
+      notes: crop.notes || "",
+    });
+    setShowCropAdditionForm(true);
   };
 
   useEffect(() => {
@@ -337,17 +501,15 @@ function App() {
               <p style={{ margin: "2px 0 0", color: "#666", fontSize: "13px" }}>Crop sensor monitoring</p>
             </div>
             <div className="stats">
-              <div className="stat"><span className="label">Farm status</span><span>Needs attention</span></div>
+              <div className="stat"><span className="label">Farm status</span><span>{farmStatus.status}</span></div>
               <div className="stat"><span className="label">Crop cards</span><span>{cropCards.length}</span></div>
               <div className="stat"><span className="label">Last refresh</span><span>12m ago</span></div>
             </div>
             <div>
-              <button>Refresh sensor data</button>
+              <button onClick={() => {getLatestCropReadings(); loadCrops();}}>Refresh sensor data</button>
               <button className="primary" onClick={() => setShowCropAdditionForm(true)}>Add crop card</button>
             </div>
           </div>
- 
-          <p><em>Sensor feed unavailable — showing the last known readings.</em> <button>Try again</button></p>
  
           <div className="card">
             <div>
@@ -402,9 +564,9 @@ function App() {
 		    </tbody>
 		  </table>
 		  <div className="actions">
-		    <button>View sensor history</button>
+		    <button onClick={() => handleViewHistory(crop)}>View sensor history</button>
 		    <span>
-		      <button>Edit</button>
+		      <button onClick={() => handleEdit(crop)}>Edit</button>
 		      <button onClick={() => handleDelete(crop.id)}>Delete</button>
 		    </span>
 		  </div>
@@ -417,7 +579,33 @@ function App() {
  
         <section>
           <h2>Sensor history (five readings, newest first)</h2>
-         </section> 
+
+	  {Object.entries(
+	    getRecentReadingsPerCrop(cropReadings, cropCards)
+	  ).map(([cropName, readings]) => (
+	    <div className="sensor-history-card" key={cropName}>
+	      <h3>{cropName}</h3>
+	      <table>
+		<thead>
+		  <tr>
+		    <th>Timestamp</th>
+		    <th>Soil moisture</th>
+		    <th>Condition</th>
+		  </tr>
+		</thead>
+		<tbody>
+		  {readings.map((reading, index) => (
+		    <tr key={`${cropName}-${reading.timestamp}-${index}`}>
+		      <td>{reading.timestamp}</td>
+		      <td>{reading.soil_moisture}%</td>
+		      <td>{reading.notes}</td>
+		    </tr>
+		  ))}
+		</tbody>
+	      </table>
+	    </div>
+	  ))}
+	</section> 
 {showCropAdditionForm && (
 <div className="popup-overlay">
     <div className="popup">
@@ -428,9 +616,9 @@ function App() {
         ×
       </button>
 
-      <h2>Add Crop Card</h2>
+      <h2>{editingCropCard ? "Edit crop card" : "Add crop card"}</h2>
 
-      <form onSubmit={addCropCard}>
+      <form onSubmit={handleSubmitCropCard}>
         <label>
           Crop name
           <select
@@ -438,8 +626,16 @@ function App() {
             value={cropAdditionForm.crop_name}
             onChange={handleChange}
             required
+	    disabled={editingCropCard != null}
           >
 	<option value="">Select a crop</option>
+	{editingCropCard &&
+	  !missingCrops.includes(editingCropCard.crop_name) && (
+	    <option value={editingCropCard.crop_name}>
+	      {editingCropCard.crop_name}
+	    </option>
+	  )}
+
 	{missingCrops.map((cropName) => (
 	  <option key={cropName} value={cropName}>
 	    {cropName}
@@ -510,11 +706,64 @@ function App() {
             Cancel
           </button>
 
-          <button type="submit" className="primary" onClick={addCropCard}>
-            Save Crop
+          <button type="submit" className="primary">
+            {editingCropCard ? "Save changes" : "Add crop card"}
           </button>
         </div>
       </form>
+    </div>
+  </div>
+)}
+{showCropHistory && selectedCrop && (
+  <div className="popup-overlay">
+    <div className="popup">
+
+      <button
+        className="popup-close"
+        onClick={() => {
+          setShowCropHistory(false);
+          setSelectedCrop(null);
+        }}
+      >
+        ×
+      </button>
+
+      <h2>
+        {selectedCrop.crop_name} Sensor History
+      </h2>
+
+      <p>
+        Last 5 sensor readings
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Date / Time</th>
+            <th>Moisture</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {getRecentReadingsForCrop(selectedCrop.crop_name).length > 0 ? (
+            getRecentReadingsForCrop(selectedCrop.crop_name).map(
+              (reading) => (
+                <tr key={reading.id}>
+                  <td>{reading.timestamp}</td>
+                  <td>{reading.soil_moisture}%</td>
+                </tr>
+              )
+            )
+          ) : (
+            <tr>
+              <td colSpan="2">
+                No sensor readings available
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
     </div>
   </div>
 )}

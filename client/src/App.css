@@ -208,6 +208,12 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
 }
 
+.popup table {
+  width: 90%;
+  margin: 0 auto;
+  text-align: center;
+}
+
 .popup h2 {
   margin-top: 0;
 }
@@ -259,4 +265,32 @@
   gap: 10px;
 
   margin-top: 10px;
+}
+.sensor-history-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.sensor-history-card h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.sensor-history-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sensor-history-card th,
+.sensor-history-card td {
+  padding: 8px;
+  text-align: center;
+  border-bottom: 1px solid #eee;
+}
+
+.sensor-history-card th {
+  background: #f5f5f5;
 }
